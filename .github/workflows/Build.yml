@@ -1,38 +1,102 @@
-yml = '''name: Build APK
+
+name: HasanLauncher Android Build
 
 on:
   push:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
+      - develop
+    tags:
+      - "v*"
   pull_request:
-    branches: [ main, master ]
+    branches:
+      - main
+      - master
+      - develop
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hasanlauncher-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
+    name: Build Debug and Release APK
     runs-on: ubuntu-latest
+    timeout-minutes: 45
+
     steps:
-      - name: Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
-          java-version: '17'
-          distribution: 'temurin'
+          distribution: temurin
+          java-version: "17"
 
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.7"
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
 
-      - name: Build APK
-        run: ./gradlew assembleDebug
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35
+        run: |
+          yes | sdkmanager --licenses
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Show environment
+        run: |
+          java -version
+          gradle --version
+
+      - name: Validate Gradle
+        run: gradle --no-daemon tasks
+
+      - name: Build Debug APK
+        run: gradle --no-daemon --stacktrace :app:assembleDebug
+
+      - name: Build Release APK
+        if: startsWith(github.ref, 'refs/tags/')
+        run: gradle --no-daemon --stacktrace :app:assembleRelease
+
+      - name: Prepare APK artifacts
+        if: always()
+        run: |
+          mkdir -p artifacts
+          if [ -f app/build/outputs/apk/debug/app-debug.apk ]; then
+            cp app/build/outputs/apk/debug/app-debug.apk \
+              artifacts/HasanLauncher-debug.apk
+          fi
+          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp app/build/outputs/apk/release/app-release-unsigned.apk \
+              artifacts/HasanLauncher-release-unsigned.apk
+          fi
 
       - name: Upload APK
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: HasanLauncher-APK
-          path: app/build/outputs/apk/debug/*.apk
-'''
-print(yml)
+          name: HasanLauncher-APKs-${{ github.run_number }}
+          path: artifacts/*.apk
+          if-no-files-found: warn
+          retention-days: 30
 
-with open('/mnt/agents/output/build.yml', 'w') as f:
-    f.write(yml)
+      - name: Upload build reports
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: HasanLauncher-build-errors
+          path: |
+            **/build/reports/
+            **/build/outputs/logs/
+          if-no-files-found: ignore
+          retention-days: 7
