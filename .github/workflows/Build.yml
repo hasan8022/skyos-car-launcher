@@ -6,10 +6,12 @@ on:
     branches:
       - main
       - master
+
   pull_request:
     branches:
       - main
       - master
+
   workflow_dispatch:
 
 permissions:
@@ -17,40 +19,70 @@ permissions:
 
 jobs:
   build:
-    name: Build Android APK
+    name: Build HasanLauncher
     runs-on: ubuntu-latest
 
     steps:
+      # Repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      # Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+          cache: gradle
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # Android SDK
+      - name: Install Android SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget unzip
+          mkdir -p "$HOME/android-sdk/cmdline-tools"
+          cd "$HOME/android-sdk"
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
+          unzip -q tools.zip
+          mkdir -p cmdline-tools/latest
+          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
+          rm -f tools.zip
 
+      # SDK Environment
+      - name: Configure Android SDK
+        run: |
+          echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
+          echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
+
+      # Install SDK Packages
+      - name: Install SDK Packages
+        run: |
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      # Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.7'
 
-      - name: Create Gradle Wrapper
-        run: gradle wrapper --gradle-version 8.7
-
-      - name: Grant Execute Permission
-        run: chmod +x gradlew
-
+      # Build APK
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            echo "Gradle wrapper bulunamadı!"
+            exit 1
+          fi
 
+      # Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: HasanLauncher-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            **/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 30
