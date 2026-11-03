@@ -1,50 +1,23 @@
 name: Build APK
-
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
-
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
-
-      - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+      - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
-
-      - name: Make gradlew executable
-        run: |
-          if [ -f "gradlew" ]; then chmod +x gradlew; fi
-
-      - name: Build Debug APK
-        run: |
-          if [ -f "gradlew" ]; then ./gradlew assembleDebug --stacktrace;
-          else gradle assembleDebug --stacktrace; fi
-
-      - name: Upload Debug APK
-        uses: actions/upload-artifact@v4
+      - run: gradle wrapper --gradle-version 8.7 && chmod +x gradlew
+      - run: ./gradlew assembleDebug --stacktrace
+      - uses: actions/upload-artifact@v4
         with:
           name: HasanLauncher-debug
           path: app/build/outputs/apk/debug/app-debug.apk
-
-      - name: Build Release APK
-        run: |
-          if [ -f "gradlew" ]; then ./gradlew assembleRelease --stacktrace;
-          else gradle assembleRelease --stacktrace; fi
-
-      - name: Upload Release APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: HasanLauncher-release
-          path: app/build/outputs/apk/release/app-release-unsigned.apk
