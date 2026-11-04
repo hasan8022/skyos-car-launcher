@@ -6,10 +6,7 @@ on:
     branches:
       - main
       - master
-  pull_request:
-    branches:
-      - main
-      - master
+
   workflow_dispatch:
 
 permissions:
@@ -21,78 +18,96 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Download source code
+      # 1. Download repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # 2. Install Java manually
-      - name: Install Java 17
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y openjdk-17-jdk
-          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
-          echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
-          java -version
+      # 2. Java 17
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
 
-      # 3. Install Android SDK
+      # 3. Find Android project automatically
+      - name: Find Gradle Project
+        shell: bash
+        run: |
+          PROJECT_FILE=$(find . -type f -name "settings.gradle.kts" \
+            -not -path "*/.gradle/*" | head -n 1)
+
+          if [ -z "$PROJECT_FILE" ]; then
+            PROJECT_FILE=$(find . -type f -name "settings.gradle" \
+              -not -path "*/.gradle/*" | head -n 1)
+          fi
+
+          if [ -z "$PROJECT_FILE" ]; then
+            echo "ERROR: Gradle project not found!"
+            find . -maxdepth 4 -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$PROJECT_FILE")
+
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+          echo "Project found: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+
+      # 4. Install Android SDK
       - name: Install Android SDK
         run: |
           mkdir -p "$HOME/android-sdk/cmdline-tools"
-          mkdir -p "$RUNNER_TEMP/android-tools"
-
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
-            -O "$RUNNER_TEMP/android-tools.zip"
-
-          unzip -q "$RUNNER_TEMP/android-tools.zip" \
-            -d "$RUNNER_TEMP/android-tools"
-
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
+          unzip -q tools.zip -d android-tools
           mkdir -p "$HOME/android-sdk/cmdline-tools/latest"
+          mv android-tools/cmdline-tools/* "$HOME/android-sdk/cmdline-tools/latest/"
 
-          mv "$RUNNER_TEMP/android-tools/cmdline-tools/"* \
-            "$HOME/android-sdk/cmdline-tools/latest/"
-
-      # 4. Configure SDK
-      - name: Configure Android Environment
-        run: |
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
 
-      # 5. Install Android packages
-      - name: Install Android SDK Packages
+      # 5. SDK packages
+      - name: Install SDK Packages
         run: |
-          yes | "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --licenses || true
+          yes | sdkmanager --licenses || true
 
-          "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" \
+          sdkmanager \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
-      # 6. Setup Gradle 8.7
+      # 6. Gradle
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.7'
 
-      # 7. Create Gradle Wrapper if missing
+      # 7. Prepare Wrapper
       - name: Prepare Gradle Wrapper
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
           if [ ! -f "./gradlew" ]; then
             gradle wrapper --gradle-version 8.7
           fi
+
           chmod +x ./gradlew
 
       # 8. Build APK
       - name: Build HasanLauncher
+        working-directory: ${{ env.PROJECT_DIR }}
         run: |
-          ./gradlew assembleDebug --no-daemon --stacktrace
+          ./gradlew assembleDebug \
+            --no-daemon \
+            --stacktrace
 
       # 9. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: HasanLauncher-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: |
+            **/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
