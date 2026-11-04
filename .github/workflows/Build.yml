@@ -2,62 +2,79 @@
 name: SkyOS APK Build
 
 on:
+  workflow_dispatch:
   push:
     branches: [main, master]
-  pull_request:
-    branches: [main, master]
-  workflow_dispatch:
 
 jobs:
   build:
-    name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Setup Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
+      # setup-android action intentionally removed.
+      # GitHub runner already provides Android SDK.
 
-      - name: Accept Android Licenses
-        run: yes | sdkmanager --licenses
+      - name: Configure Android SDK
+        shell: bash
+        run: |
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+
+          if [ -z "$SDK_ROOT" ]; then
+            SDK_ROOT="/usr/local/lib/android/sdk"
+          fi
+
+          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+
+          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
+            -type f -name sdkmanager | sort -V | tail -n 1)
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found"
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" --licenses || true
+
+          "$SDKMANAGER" \
+            --sdk_root="$SDK_ROOT" \
+            --install "platform-tools"
 
       - name: Find Gradle Wrapper
+        shell: bash
         run: |
           WRAPPER=$(find . -type f -name gradlew \
             -not -path '*/.gradle/*' | head -n 1)
 
           if [ -z "$WRAPPER" ]; then
-            echo "ERROR: gradlew dosyasi bulunamadi!"
-            echo "Proje dosyalari:"
-            ls -la
+            echo "ERROR: gradlew not found"
+            find . -maxdepth 4 -type f | head -100
             exit 1
           fi
 
           PROJECT_DIR=$(dirname "$WRAPPER")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
-
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
           chmod +x "$WRAPPER"
-          echo "Gradle wrapper bulundu: $WRAPPER"
 
-      - name: Build Debug APK
+      - name: Build APK
         run: |
           cd "$PROJECT_DIR"
-          ./gradlew assembleDebug --stacktrace --no-daemon
-        env:
-          ORG_GRADLE_PROJECT_org.gradle.jvmargs: "-Xmx4g -Dfile.encoding=UTF-8"
+          ./gradlew assembleDebug --no-daemon --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SkyOS-Debug-APK
+          name: SkyOS-APK
           path: "**/build/outputs/apk/debug/*.apk"
           if-no-files-found: error
           retention-days: 30
