@@ -1,10 +1,11 @@
+
 name: SkyOS APK Build
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [main, master]
   pull_request:
-    branches: [ main, master ]
+    branches: [main, master]
   workflow_dispatch:
 
 jobs:
@@ -13,41 +14,50 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up JDK 17
+      - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-        with:
-          packages: 'platform-tools'
+        uses: android-actions/setup-android@v3
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Accept Android Licenses
+        run: yes | sdkmanager --licenses
 
-      - name: Make gradlew executable
-        run: chmod +x gradlew
+      - name: Find Gradle Wrapper
+        run: |
+          WRAPPER=$(find . -type f -name gradlew \
+            -not -path '*/.gradle/*' | head -n 1)
+
+          if [ -z "$WRAPPER" ]; then
+            echo "ERROR: gradlew dosyasi bulunamadi!"
+            echo "Proje dosyalari:"
+            ls -la
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$WRAPPER")
+          echo "PROJECT_DIR=$PROJECT_DIR" >> $GITHUB_ENV
+
+          chmod +x "$WRAPPER"
+          echo "Gradle wrapper bulundu: $WRAPPER"
 
       - name: Build Debug APK
-        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        run: |
+          cd "$PROJECT_DIR"
+          ./gradlew assembleDebug --stacktrace --no-daemon
         env:
           ORG_GRADLE_PROJECT_org.gradle.jvmargs: "-Xmx4g -Dfile.encoding=UTF-8"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SkyOS-debug-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: SkyOS-Debug-APK
+          path: "**/build/outputs/apk/debug/*.apk"
+          if-no-files-found: error
           retention-days: 30
