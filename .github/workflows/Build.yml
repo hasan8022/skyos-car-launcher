@@ -1,28 +1,52 @@
 name: Build APK
+
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      - name: Extract ZIP if present
+        run: |
+          echo "=== BEFORE ==="
+          ls -la
+          if [ ! -f "settings.gradle.kts" ]; then
+            ZIP=$(ls *.zip 2>/dev/null | head -1)
+            if [ -n "$ZIP" ]; then
+              echo "ZIP bulundu: $ZIP - aciliyor..."
+              unzip -o "$ZIP" -d .
+              INNER=$(ls -d */ 2>/dev/null | grep -v ".git/" | grep -v ".github/" | head -1)
+              if [ -n "$INNER" ] && [ -f "$INNER/settings.gradle.kts" ]; then
+                echo "Ic ice klasor: $INNER - disari cikariliyor"
+                mv "$INNER"/* . 2>/dev/null || true
+                mv "$INNER"/.github ./.github 2>/dev/null || true
+                rmdir "$INNER" 2>/dev/null || true
+              fi
+              rm "$ZIP"
+            fi
+          fi
+          echo "=== AFTER ==="
+          ls -la
+          cat settings.gradle.kts 2>/dev/null || echo "settings.gradle.kts HALA YOK"
+
       - uses: actions/setup-java@v4
         with:
           java-version: '17'
           distribution: 'temurin'
+
       - uses: gradle/actions/setup-gradle@v3
         with:
           gradle-version: '8.7'
-      - run: |
-          echo "=== ROOT FILES ==="
-          ls -la
-          echo ""
-          echo "=== SETTINGS ==="
-          cat settings.gradle.kts
+
       - run: gradle wrapper --gradle-version 8.7 && chmod +x gradlew
+
       - run: ./gradlew assembleDebug --stacktrace
+
       - uses: actions/upload-artifact@v4
         with:
           name: HasanLauncher-debug
