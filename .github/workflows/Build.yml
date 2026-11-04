@@ -1,74 +1,60 @@
-name: SkyOS APK Build
+name: Android CI - SkyOS ET5 APK Build
 
-on: [push, workflow_dispatch]
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
-  build:
-    name: Build Debug APK
+  build-apk:
+    name: Build SkyOS ET5 Debug APK (Android 9 - 12+ Tablet)
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Proje zip'liyse cikar
-        run: |
-          if [ -f SkyOS_Guncellenmis_Proje.zip ]; then
-            echo "Zip bulundu — extracted/ icine cikariliyor"
-            mkdir -p extracted
-            unzip -o SkyOS_Guncellenmis_Proje.zip -d extracted
-          fi
-          echo "--- Repo koku ---"
-          ls -la
-
-      - name: Set up JDK 17
+      - name: Set up JDK 21 (Temurin)
         uses: actions/setup-java@v4
         with:
-          distribution: temurin
-          java-version: '17'
+          distribution: 'temurin'
+          java-version: '21'
 
-      - name: Setup Android SDK paths
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Accept Android SDK Licenses & Install Required Platforms
         run: |
-          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
-          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
-          echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
+          yes | sdkmanager --licenses || true
+          sdkmanager "platform-tools" "platforms;android-36" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Accept Android SDK licenses
+      - name: Setup Gradle Cache
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Configure local.properties & Google Maps API Key
+        env:
+          MAPS_KEY: ${{ secrets.MAPS_API_KEY }}
         run: |
-          sudo mkdir -p /usr/local/lib/android/sdk/licenses
-          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" | sudo tee /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
-          echo "84831b9409646a918e30573bab4c9c91346d8abd" | sudo tee -a /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
-          echo "d975f751698a77b662f1254ddbeed3901e976f5a" | sudo tee -a /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
+          if [ -n "$MAPS_KEY" ]; then
+            echo "MAPS_API_KEY=$MAPS_KEY" >> local.properties
+            echo "MAPS_API_KEY=$MAPS_KEY" > .env
+          else
+            echo "MAPS_API_KEY=AIzaSyCCEttp3mULooST70ncYa1ZekWhyfVvu3g" >> local.properties
+            echo "MAPS_API_KEY=AIzaSyCCEttp3mULooST70ncYa1ZekWhyfVvu3g" > .env
+          fi
 
-      - name: Cache Gradle
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
+      - name: Grant Execute Permission for Gradlew
+        run: chmod +x ./gradlew
 
       - name: Build Debug APK
-        run: |
-          WRAPPER=$(find . -type f -name gradlew -not -path "*/.git/*" | sort | head -1)
-          if [ -z "$WRAPPER" ]; then
-            echo "ERROR: gradlew bulunamadi"
-            exit 1
-          fi
-          PROJECT_DIR=$(dirname "$WRAPPER")
-          echo "Proje dizini: $PROJECT_DIR"
-          chmod +x "$WRAPPER"
-          cd "$PROJECT_DIR"
-          ./gradlew assembleDebug --stacktrace --no-daemon
+        run: ./gradlew assembleDebug --no-daemon --stacktrace
 
-      - name: Upload APK
+      - name: Upload Built APK Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SkyOS-debug-apk
-          path: |
-            extracted/app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/debug/*.apk
+          name: SkyOS-ET5-GoogleNav-Debug-APK
+          path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 30
