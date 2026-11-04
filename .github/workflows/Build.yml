@@ -1,80 +1,58 @@
-
 name: SkyOS APK Build
 
 on:
-  workflow_dispatch:
   push:
-    branches: [main, master]
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
 
 jobs:
   build:
+    name: Build Debug APK
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Java
+      - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
-      # setup-android action intentionally removed.
-      # GitHub runner already provides Android SDK.
-
-      - name: Configure Android SDK
-        shell: bash
+      - name: Setup Android SDK paths
         run: |
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT}}"
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
 
-          if [ -z "$SDK_ROOT" ]; then
-            SDK_ROOT="/usr/local/lib/android/sdk"
-          fi
+      - name: Accept SDK licenses
+        run: yes | sudo -E sdkmanager --sdk_root=/usr/local/lib/android/sdk --licenses
 
-          echo "ANDROID_HOME=$SDK_ROOT" >> "$GITHUB_ENV"
-          echo "ANDROID_SDK_ROOT=$SDK_ROOT" >> "$GITHUB_ENV"
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
-          SDKMANAGER=$(find "$SDK_ROOT/cmdline-tools" \
-            -type f -name sdkmanager | sort -V | tail -n 1)
+      - name: Make gradlew executable
+        run: chmod +x gradlew
 
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found"
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" \
-            --sdk_root="$SDK_ROOT" --licenses || true
-
-          "$SDKMANAGER" \
-            --sdk_root="$SDK_ROOT" \
-            --install "platform-tools"
-
-      - name: Find Gradle Wrapper
-        shell: bash
-        run: |
-          WRAPPER=$(find . -type f -name gradlew \
-            -not -path '*/.gradle/*' | head -n 1)
-
-          if [ -z "$WRAPPER" ]; then
-            echo "ERROR: gradlew not found"
-            find . -maxdepth 4 -type f | head -100
-            exit 1
-          fi
-
-          PROJECT_DIR=$(dirname "$WRAPPER")
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-          chmod +x "$WRAPPER"
-
-      - name: Build APK
-        run: |
-          cd "$PROJECT_DIR"
-          ./gradlew assembleDebug --no-daemon --stacktrace
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        env:
+          ORG_GRADLE_PROJECT_org.gradle.jvmargs: "-Xmx4g -Dfile.encoding=UTF-8"
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: SkyOS-APK
-          path: "**/build/outputs/apk/debug/*.apk"
-          if-no-files-found: error
+          name: SkyOS-debug-apk
+          path: app/build/outputs/apk/debug/*.apk
           retention-days: 30
