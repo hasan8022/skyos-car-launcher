@@ -22,6 +22,17 @@ jobs:
           distribution: temurin
           java-version: '17'
 
+      - name: Accept Android SDK licenses
+        run: |
+          sudo mkdir -p /usr/local/lib/android/sdk/licenses
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" | sudo tee /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" | sudo tee -a /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
+          echo "d975f751698a77b662f1254ddbeed3901e976f5a" | sudo tee -a /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
+          echo "33b6a2b64607f11b759f320ef9dff4ae5c47d97a" | sudo tee /usr/local/lib/android/sdk/licenses/android-sdk-preview-license > /dev/null
+          echo "e9acab5b5fbb560a72cfaecce8946896ff6aab9d" | sudo tee /usr/local/lib/android/sdk/licenses/android-googletv-license > /dev/null
+          echo "601085b94e77bedbcef13f8c7b46a6e4b89a6b71" | sudo tee /usr/local/lib/android/sdk/licenses/google-gdk-license > /dev/null
+          echo "859f317696f67ef3d7f30a50a5560e7834b43903" | sudo tee /usr/local/lib/android/sdk/licenses/mips-android-sysimage-license > /dev/null
+
       - name: Setup Android SDK paths
         run: |
           echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
@@ -29,11 +40,66 @@ jobs:
           echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
 
-      - name: Accept SDK licenses
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', '**/libs.versions.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace --no-daemon
+        env:
+am knk, sakin — lisans adımını **komple kaldırıyorum**, kökten çözüm. GitHub runner'da SDK lisansları aslında zaten `/usr/local/lib/android/sdk/licenses` altında ön-onaylı gelir; o adım gereksiz yere takılıp duruyor. Onun yerine lisans dosyalarını **kendimiz yazıyoruz**, sdkmanager'a hiç bulaşmıyoruz. Bu yöntem binlerce projede kullanılan standart çözüm:
+
+```yaml
+name: SkyOS APK Build
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Debug APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Accept Android SDK licenses
         run: |
-          SDKMANAGER=$(find /usr/local/lib/android/sdk/cmdline-tools -name sdkmanager -type f | sort | head -1)
-          echo "sdkmanager: $SDKMANAGER"
-          yes | sudo "$SDKMANAGER" --sdk_root=/usr/local/lib/android/sdk --licenses
+          sudo mkdir -p /usr/local/lib/android/sdk/licenses
+          echo "24333f8a63b6825ea9c5514f83c2829b004d1fee" | sudo tee /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
+          echo "84831b9409646a918e30573bab4c9c91346d8abd" | sudo tee -a /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
+          echo "d975f751698a77b662f1254ddbeed3901e976f5a" | sudo tee -a /usr/local/lib/android/sdk/licenses/android-sdk-license > /dev/null
+          echo "33b6a2b64607f11b759f320ef9dff4ae5c47d97a" | sudo tee /usr/local/lib/android/sdk/licenses/android-sdk-preview-license > /dev/null
+          echo "e9acab5b5fbb560a72cfaecce8946896ff6aab9d" | sudo tee /usr/local/lib/android/sdk/licenses/android-googletv-license > /dev/null
+          echo "601085b94e77bedbcef13f8c7b46a6e4b89a6b71" | sudo tee /usr/local/lib/android/sdk/licenses/google-gdk-license > /dev/null
+          echo "859f317696f67ef3d7f30a50a5560e7834b43903" | sudo tee /usr/local/lib/android/sdk/licenses/mips-android-sysimage-license > /dev/null
+
+      - name: Setup Android SDK paths
+        run: |
+          echo "ANDROID_HOME=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "ANDROID_SDK_ROOT=/usr/local/lib/android/sdk" >> $GITHUB_ENV
+          echo "/usr/local/lib/android/sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
+          echo "/usr/local/lib/android/sdk/platform-tools" >> $GITHUB_PATH
 
       - name: Cache Gradle
         uses: actions/cache@v4
