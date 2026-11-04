@@ -6,12 +6,10 @@ on:
     branches:
       - main
       - master
-
   pull_request:
     branches:
       - main
       - master
-
   workflow_dispatch:
 
 permissions:
@@ -19,70 +17,82 @@ permissions:
 
 jobs:
   build:
-    name: Build HasanLauncher
+    name: Build HasanLauncher APK
     runs-on: ubuntu-latest
 
     steps:
-      # Repository
+      # 1. Download source code
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Java 17
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-          cache: gradle
-
-      # Android SDK
-      - name: Install Android SDK
+      # 2. Install Java manually
+      - name: Install Java 17
         run: |
           sudo apt-get update
-          sudo apt-get install -y wget unzip
-          mkdir -p "$HOME/android-sdk/cmdline-tools"
-          cd "$HOME/android-sdk"
-          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip -O tools.zip
-          unzip -q tools.zip
-          mkdir -p cmdline-tools/latest
-          mv cmdline-tools/* cmdline-tools/latest/ 2>/dev/null || true
-          rm -f tools.zip
+          sudo apt-get install -y openjdk-17-jdk
+          echo "JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64" >> $GITHUB_ENV
+          echo "/usr/lib/jvm/java-17-openjdk-amd64/bin" >> $GITHUB_PATH
+          java -version
 
-      # SDK Environment
-      - name: Configure Android SDK
+      # 3. Install Android SDK
+      - name: Install Android SDK
+        run: |
+          mkdir -p "$HOME/android-sdk/cmdline-tools"
+          mkdir -p "$RUNNER_TEMP/android-tools"
+
+          wget -q https://dl.google.com/android/repository/commandlinetools-linux-11076708_latest.zip \
+            -O "$RUNNER_TEMP/android-tools.zip"
+
+          unzip -q "$RUNNER_TEMP/android-tools.zip" \
+            -d "$RUNNER_TEMP/android-tools"
+
+          mkdir -p "$HOME/android-sdk/cmdline-tools/latest"
+
+          mv "$RUNNER_TEMP/android-tools/cmdline-tools/"* \
+            "$HOME/android-sdk/cmdline-tools/latest/"
+
+      # 4. Configure SDK
+      - name: Configure Android Environment
         run: |
           echo "ANDROID_HOME=$HOME/android-sdk" >> $GITHUB_ENV
           echo "ANDROID_SDK_ROOT=$HOME/android-sdk" >> $GITHUB_ENV
           echo "$HOME/android-sdk/cmdline-tools/latest/bin" >> $GITHUB_PATH
           echo "$HOME/android-sdk/platform-tools" >> $GITHUB_PATH
 
-      # Install SDK Packages
-      - name: Install SDK Packages
+      # 5. Install Android packages
+      - name: Install Android SDK Packages
         run: |
-          yes | sdkmanager --licenses || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          yes | "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" --licenses || true
 
-      # Gradle
+          "$HOME/android-sdk/cmdline-tools/latest/bin/sdkmanager" \
+            "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
+
+      # 6. Setup Gradle 8.7
       - name: Setup Gradle
         uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
 
-      # Build APK
-      - name: Build Debug APK
+      # 7. Create Gradle Wrapper if missing
+      - name: Prepare Gradle Wrapper
         run: |
-          if [ -f "./gradlew" ]; then
-            chmod +x ./gradlew
-            ./gradlew assembleDebug --stacktrace
-          else
-            echo "Gradle wrapper bulunamadı!"
-            exit 1
+          if [ ! -f "./gradlew" ]; then
+            gradle wrapper --gradle-version 8.7
           fi
+          chmod +x ./gradlew
 
-      # Upload APK
+      # 8. Build APK
+      - name: Build HasanLauncher
+        run: |
+          ./gradlew assembleDebug --no-daemon --stacktrace
+
+      # 9. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: HasanLauncher-APK
-          path: |
-            **/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
           retention-days: 30
